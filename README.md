@@ -24,7 +24,7 @@
 适用场景：快速获取开源项目或公共仓库代码
 
 ```bash
-git clone https://github.com/zhouzhou12203/documents.git
+git clone https://github.com/zduu/documents.git
 ```
 
 ---
@@ -63,7 +63,7 @@ ssh -T git@github.com
 ### 修改远程仓库为SSH地址
 ```bash
 # 将HTTPS地址改为SSH地址
-git remote set-url origin git@github.com:zhouzhou12203/documents.git
+git remote set-url origin git@github.com:zduu/documents.git
 
 # 查看当前远程地址
 git remote -v
@@ -82,9 +82,9 @@ mkdir project && cd project
 git init
 
 # 关联远程仓库
-git remote add origin git@github.com:zhouzhou12203/documents.git
+git remote add origin git@github.com:zduu/documents.git
 # 如果之前已经设置过远程仓库地址，可以使用以下命令修改
-git remote set-url origin git@github.com:zhouzhou12203/documents.git
+git remote set-url origin git@github.com:zduu/documents.git
 
 # 查看远程仓库地址
 git remote -v
@@ -146,20 +146,94 @@ git checkout -b backup-main origin/main
 
 适用场景：撤销错误的提交或回到之前的版本
 ```bash
-# 方法1：软回退（保留文件修改，撤销commit）
+# 方法1：软回退（保留工作区和暂存区的修改，仅撤销提交记录）
 git reset --soft HEAD^
+# 注意：此操作仅影响本地仓库，远程仓库不受影响
 
-# 方法2：混合回退（撤销commit和add，保留文件修改）
+# 方法2：混合回退（保留工作区修改，撤销暂存区和提交记录）
 git reset HEAD^
+# 注意：此操作仅影响本地仓库，远程仓库不受影响
 
-# 方法3：硬回退（完全删除最近一次commit）
+# 方法3：硬回退（完全撤销最近一次提交，包括工作区和暂存区的修改）
 git reset --hard HEAD^
+# 注意：此操作仅影响本地仓库，远程仓库不受影响
 
-# 回退多个提交（回退到3个提交之前）
+# 回退多个提交（回退到3个提交之前，完全撤销这些提交的所有修改）
 git reset --hard HEAD~3
+# 注意：此操作仅影响本地仓库，远程仓库不受影响
 
 # 查看提交历史
 git log --oneline -10
+```
+
+#### 本地和远程同时回退
+
+适用场景：需要同时回退本地和远程仓库到之前的版本
+```bash
+# 1. 先回退本地提交（使用硬回退）
+git reset --hard HEAD~2  # 回退两个提交
+
+# 2. 强制推送回退后的版本到远程仓库
+git push --force-with-lease origin main
+
+# 注意：这种方法会改写历史，影响其他协作者
+# 在团队协作中使用前需要与团队成员沟通
+```
+
+#### 只回退远程提交
+
+适用场景：本地是正确的，但远程有错误提交需要撤销
+```bash
+# 1. 确保本地是正确的版本
+git log --oneline -10
+
+# 2. 强制推送本地正确版本到远程
+git push --force-with-lease origin main
+
+# 或者使用完全强制推送（不推荐）
+git push -f origin main
+```
+
+#### 回退到指定提交
+
+适用场景：需要回退到特定的提交点
+```bash
+# 1. 查看提交历史，找到目标提交哈希
+git log --oneline -10
+
+# 2. 回退到指定提交（使用硬回退）
+git reset --hard a1b2c3d  # a1b2c3d为目标提交哈希
+
+# 3. 强制推送回退后的版本到远程
+git push --force-with-lease origin main
+```
+
+#### 安全注意事项
+
+1. **备份重要数据**：在执行回退操作前，建议创建备份分支
+```bash
+# 创建备份分支
+git checkout -b backup-branch
+```
+
+2. **团队协作**：在共享仓库中回退历史时，务必与团队成员沟通
+
+3. **使用安全的强制推送**：推荐使用 `--force-with-lease` 而不是 `-f`
+```bash
+# 安全的强制推送
+git push --force-with-lease origin main
+
+# 不安全的强制推送（可能覆盖他人提交）
+git push -f origin main
+```
+
+4. **撤销回退操作**：如果回退错误，可以通过reflog找回提交
+```bash
+# 查看操作历史
+git reflog
+
+# 恢复到回退前的提交
+git reset --hard HEAD@{1}
 ```
 
 ---
