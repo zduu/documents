@@ -659,6 +659,203 @@ complete_removal() {
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
+# 21. 容器深度清理
+deep_clean_container() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        💣 容器深度清理                     ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${RED}⚠️  此功能将深度清理指定容器的所有关联资源！${NC}"
+    echo -e "${YELLOW}包括: 容器本身、使用的镜像、挂载的卷、关联的网络${NC}\n"
+
+    echo -e "${YELLOW}📋 所有容器:${NC}"
+    docker ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
+    echo -e "\n${BLUE}请输入要深度清理的容器名称或 ID:${NC}"
+    read -r container_id
+
+    if [ -z "$container_id" ]; then
+        echo -e "${RED}❌ 错误：容器名称或 ID 不能为空。${NC}"
+        return
+    fi
+
+    # 检查容器是否存在
+    if ! docker ps -a --format "{{.ID}}" | grep -q "^${container_id}"; then
+        if ! docker ps -a --format "{{.Names}}" | grep -q "^${container_id}$"; then
+            echo -e "${RED}❌ 错误：未找到容器 '$container_id'${NC}"
+            return
+        fi
+    fi
+
+    echo -e "\n${YELLOW}🔍 分析容器资源...${NC}\n"
+
+    # 获取容器详细信息
+    container_info=$(docker inspect "$container_id" 2>/dev/null)
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ 错误：无法获取容器信息${NC}"
+        return
+    fi
+
+    # 获取容器名称
+    container_name=$(echo "$container_info" | grep -o '"Name": *"[^"]*"' | head -1 | cut -d'"' -f4)
+
+    # 获取容器使用的镜像
+    image_id=$(echo "$container_info" | grep -o '"Image": *"sha256:[^"]*"' | head -1 | cut -d'"' -f4)
+    image_name=$(docker inspect --format='{{.Config.Image}}' "$container_id" 2>/dev/null)
+
+    # 获取容器挂载的卷
+    volumes=$(echo "$container_info" | grep -o '"Source": *"[^"]*"' | cut -d'"' -f4)
+    named_volumes=$(docker inspect --format='{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$container_id" 2>/dev/null)
+
+    # 获取容器连接的网络
+    networks=$(docker inspect --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$container_id" 2>/dev/null | grep -v "^bridge$" | grep -v "^host$" | grep -v "^none$")
+
+    # 显示资源详情
+    echo -e "${CYAN}📦 容器信息:${NC}"
+    echo -e "  ID: ${YELLOW}${container_id}${NC}"
+    echo -e "  名称: ${YELLOW}${container_name}${NC}"
+
+    echo -e "\n${CYAN}🖼️  使用的镜像:${NC}"
+    if [ -n "$image_name" ]; then
+        echo -e "  ${YELLOW}${image_name}${NC} (${image_id:0:12})"
+        # 检查是否有其他容器使用同一镜像
+        other_containers=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}" | grep -v "^${container_id:0:12}" | wc -l | tr -d ' ')
+        if [ "$other_containers" -gt 0 ]; then
+            echo -e "  ${YELLOW}⚠ 注意：还有 $other_containers 个容器使用此镜像${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}未找到${NC}"
+    fi
+
+    echo -e "\n${CYAN}💾 挂载的数据卷:${NC}"
+    if [ -n "$named_volumes" ]; then
+        echo "$named_volumes" | while read vol; do
+            if [ -n "$vol" ]; then
+                # 检查是否有其他容器使用同一卷
+                vol_usage=$(docker ps -a --filter "volume=$vol" --format "{{.ID}}" | grep -v "^${container_id:0:12}" | wc -l | tr -d ' ')
+                if [ "$vol_usage" -gt 0 ]; then
+                    echo -e "  ${YELLOW}$vol${NC} ${RED}(被 $vol_usage 个其他容器使用，不会删除)${NC}"
+                else
+                    echo -e "  ${YELLOW}$vol${NC}"
+                fi
+            fi
+        done
+    else
+        echo -e "  ${YELLOW}无命名卷${NC}"
+    fi
+
+    echo -e "\n${CYAN}🌐 连接的网络:${NC}"
+    if [ -n "$networks" ]; then
+        echo "$networks" | while read net; do
+            if [ -n "$net" ]; then
+                # 检查网络是否有其他容器使用
+                net_usage=$(docker network inspect "$net" -f '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' 2>/dev/null | grep -v "^${container_name#/}$" | wc -l | tr -d ' ')
+                if [ "$net_usage" -gt 0 ]; then
+                    echo -e "  ${YELLOW}$net${NC} ${RED}(被 $net_usage 个其他容器使用，不会删除)${NC}"
+                else
+                    echo -e "  ${YELLOW}$net${NC}"
+                fi
+            fi
+        done
+    else
+        echo -e "  ${YELLOW}仅使用默认网络${NC}"
+    fi
+
+    echo -e "\n${CYAN}────────────────────────────────────────────${NC}"
+
+    echo -e "\n${RED}⚠️  确认深度清理以上资源? (输入 'YES' 确认):${NC}"
+    read -r confirm
+
+    if [ "$confirm" != "YES" ]; then
+        echo -e "${YELLOW}已取消清理${NC}"
+        return
+    fi
+
+    echo -e "\n${YELLOW}💣 开始深度清理...${NC}\n"
+
+    # 1. 停止并删除容器
+    echo -e "${BLUE}[1/4]${NC} 停止并删除容器..."
+    docker stop "$container_id" 2>/dev/null
+    docker rm -f "$container_id" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo -e "  ${GREEN}✓${NC} 已删除容器: $container_id"
+    else
+        echo -e "  ${RED}✗${NC} 删除容器失败"
+    fi
+
+    # 2. 删除镜像（如果没有其他容器使用）
+    echo -e "\n${BLUE}[2/4]${NC} 清理镜像..."
+    if [ -n "$image_name" ] && [ "$other_containers" -eq 0 ]; then
+        docker rmi "$image_name" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo -e "  ${GREEN}✓${NC} 已删除镜像: $image_name"
+        else
+            echo -e "  ${YELLOW}⚠${NC} 镜像删除失败或被其他资源使用"
+        fi
+    else
+        echo -e "  ${YELLOW}⚠${NC} 跳过镜像删除（被其他容器使用或未找到）"
+    fi
+
+    # 3. 删除数据卷（仅删除未被其他容器使用的）
+    echo -e "\n${BLUE}[3/4]${NC} 清理数据卷..."
+    if [ -n "$named_volumes" ]; then
+        deleted_volumes=0
+        skipped_volumes=0
+        echo "$named_volumes" | while read vol; do
+            if [ -n "$vol" ]; then
+                vol_usage=$(docker ps -a --filter "volume=$vol" --format "{{.ID}}" 2>/dev/null | wc -l | tr -d ' ')
+                if [ "$vol_usage" -eq 0 ]; then
+                    docker volume rm "$vol" 2>/dev/null
+                    if [ $? -eq 0 ]; then
+                        echo -e "  ${GREEN}✓${NC} 已删除数据卷: $vol"
+                    fi
+                else
+                    echo -e "  ${YELLOW}⚠${NC} 跳过数据卷: $vol (被其他容器使用)"
+                fi
+            fi
+        done
+    else
+        echo -e "  ${YELLOW}⚠${NC} 无需清理数据卷"
+    fi
+
+    # 4. 删除网络（仅删除未被其他容器使用的）
+    echo -e "\n${BLUE}[4/4]${NC} 清理网络..."
+    if [ -n "$networks" ]; then
+        echo "$networks" | while read net; do
+            if [ -n "$net" ]; then
+                net_usage=$(docker network inspect "$net" -f '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' 2>/dev/null | wc -l | tr -d ' ')
+                if [ "$net_usage" -eq 0 ]; then
+                    docker network rm "$net" 2>/dev/null
+                    if [ $? -eq 0 ]; then
+                        echo -e "  ${GREEN}✓${NC} 已删除网络: $net"
+                    fi
+                else
+                    echo -e "  ${YELLOW}⚠${NC} 跳过网络: $net (被其他容器使用)"
+                fi
+            fi
+        done
+    else
+        echo -e "  ${YELLOW}⚠${NC} 无需清理网络"
+    fi
+
+    # 5. 清理所有未使用的残余资源
+    echo -e "\n${BLUE}[额外]${NC} 清理所有未使用的残余资源..."
+    echo -e "  ${CYAN}•${NC} 清理悬空镜像..."
+    docker image prune -f 2>/dev/null
+    echo -e "  ${CYAN}•${NC} 清理未使用的网络..."
+    docker network prune -f 2>/dev/null
+    echo -e "  ${CYAN}•${NC} 清理未使用的数据卷..."
+    docker volume prune -f 2>/dev/null
+
+    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✓ 容器深度清理完成！${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    echo -e "\n${YELLOW}📊 当前磁盘使用情况:${NC}\n"
+    docker system df
+}
+
 # 18. 执行 Docker Compose
 run_docker_compose() {
     echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
@@ -706,8 +903,9 @@ show_menu() {
     echo -e "${CYAN}└──────────────────────────────────────────────────┘${NC}"
     echo ""
     echo -e "${CYAN}┌─ 🧹 系统维护 ────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${NC}  ${YELLOW}14.${NC} 资源监控                  ${YELLOW}16.${NC} 系统清理              ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${YELLOW}15.${NC} 磁盘使用分析              ${YELLOW}17.${NC} 服务彻底清除          ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}14.${NC} 资源监控                  ${YELLOW}17.${NC} 服务彻底清除          ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}15.${NC} 磁盘使用分析              ${YELLOW}21.${NC} 容器深度清理          ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}16.${NC} 系统清理                                          ${CYAN}│${NC}"
     echo -e "${CYAN}└──────────────────────────────────────────────────┘${NC}"
     echo ""
     echo -e "${CYAN}┌─ 🔧 Compose & 工具 ──────────────────────────────┐${NC}"
@@ -717,7 +915,7 @@ show_menu() {
     echo ""
     echo -e "${RED}  0.${NC}  退出脚本"
     echo ""
-    echo -n -e "${BLUE}请输入您的选择 [0-20]: ${NC}"
+    echo -n -e "${BLUE}请输入您的选择 [0-21]: ${NC}"
 }
 
 # 主循环
@@ -745,9 +943,10 @@ while true; do
         18) run_docker_compose; press_any_key_to_continue ;;
         19) install_shortcut; press_any_key_to_continue ;;
         20) uninstall_shortcut; press_any_key_to_continue ;;
+        21) deep_clean_container; press_any_key_to_continue ;;
         0) echo -e "\n${GREEN}👋 感谢使用，再见！${NC}\n";
            break ;;
-        *) echo -e "\n${RED}❌ 无效输入，请输入 0 到 20 之间的数字。${NC}"; press_any_key_to_continue ;;
+        *) echo -e "\n${RED}❌ 无效输入，请输入 0 到 21 之间的数字。${NC}"; press_any_key_to_continue ;;
     esac
 done
 
