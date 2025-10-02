@@ -143,7 +143,8 @@ install_shortcut() {
 
     # 添加到 PATH
     if [ -n "$shell_rc" ] && [ -f "$shell_rc" ]; then
-        if ! grep -q "$bin_dir" "$shell_rc" 2>/dev/null; then
+        # 检查是否已经包含 Docker 脚本快捷指令的配置
+        if ! grep -q "# Docker 脚本快捷指令" "$shell_rc" 2>/dev/null; then
             echo "" >> "$shell_rc"
             echo "# Docker 脚本快捷指令" >> "$shell_rc"
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
