@@ -14,6 +14,36 @@ if [ ! -x "$0" ]; then
     exec "$0" "$@"
 fi
 
+# 检查并修复失效的快捷指令
+check_and_fix_shortcut() {
+    local bin_dir="$HOME/.local/bin"
+    local shortcut_name="dk"
+    local shortcut_path="$bin_dir/$shortcut_name"
+
+    # 如果快捷指令存在但指向的文件不存在
+    if [ -L "$shortcut_path" ]; then
+        local target=$(readlink "$shortcut_path")
+        if [ ! -f "$target" ]; then
+            local current_script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${YELLOW}⚠️  检测到快捷指令已失效${NC}"
+            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${RED}原路径: ${target}${NC}"
+            echo -e "${GREEN}新路径: ${current_script}${NC}"
+            echo -e "${BLUE}是否自动修复? (y/n, 默认 y):${NC}"
+            read -r -t 10 fix_choice || fix_choice="y"
+            if [[ "$fix_choice" != "n" && "$fix_choice" != "N" ]]; then
+                ln -sf "$current_script" "$shortcut_path"
+                echo -e "${GREEN}✓ 快捷指令已自动修复！${NC}\n"
+                sleep 2
+            fi
+        fi
+    fi
+}
+
+# 执行检查
+check_and_fix_shortcut
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -72,15 +102,32 @@ detect_compose_cmd
 
 # 安装快捷指令
 install_shortcut() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        安装快捷指令                        ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
     local script_path="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     local bin_dir="$HOME/.local/bin"
     local shortcut_name="dk"
+
+    # 检查是否已安装
+    if [ -L "$bin_dir/$shortcut_name" ]; then
+        echo -e "${YELLOW}⚠ 快捷指令已存在${NC}"
+        echo -e "${BLUE}当前指向: ${CYAN}$(readlink "$bin_dir/$shortcut_name")${NC}"
+        echo -e "${BLUE}是否重新安装? (y/n, 默认 n):${NC}"
+        read -r reinstall
+        if [[ "$reinstall" != "y" && "$reinstall" != "Y" ]]; then
+            echo -e "${YELLOW}已取消安装${NC}"
+            return
+        fi
+    fi
 
     # 创建 bin 目录
     mkdir -p "$bin_dir"
 
     # 创建软链接
     ln -sf "$script_path" "$bin_dir/$shortcut_name"
+    echo -e "${GREEN}✓${NC} 创建软链接: ${CYAN}$bin_dir/$shortcut_name${NC}"
 
     # 检测 shell 类型并添加 PATH
     local shell_rc=""
@@ -100,16 +147,56 @@ install_shortcut() {
             echo "" >> "$shell_rc"
             echo "# Docker 脚本快捷指令" >> "$shell_rc"
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
-            echo -e "${GREEN}✓ 已添加 PATH 到 $shell_rc${NC}"
+            echo -e "${GREEN}✓${NC} 已添加 PATH 到 ${CYAN}$shell_rc${NC}"
+        else
+            echo -e "${GREEN}✓${NC} PATH 已存在于 ${CYAN}$shell_rc${NC}"
         fi
     fi
 
-    echo -e "\n${GREEN}✓ 快捷指令安装成功！${NC}"
-    echo -e "${YELLOW}快捷指令: ${CYAN}dk${NC}"
-    echo -e "${YELLOW}请运行以下命令使其生效:${NC}"
-    echo -e "${CYAN}  source $shell_rc${NC}"
-    echo -e "${YELLOW}或者重新打开终端${NC}"
-    echo -e "\n${YELLOW}之后可以在任何位置直接运行: ${CYAN}dk${NC}"
+    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✓ 快捷指令安装成功！${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "\n${YELLOW}📌 快捷指令名称: ${CYAN}${shortcut_name}${NC}"
+    echo -e "\n${YELLOW}🔧 使配置生效 (二选一):${NC}"
+    echo -e "   ${CYAN}1.${NC} 运行命令: ${CYAN}source $shell_rc${NC}"
+    echo -e "   ${CYAN}2.${NC} 重新打开终端"
+    echo -e "\n${YELLOW}🚀 之后可以在任何位置直接运行: ${GREEN}${shortcut_name}${NC}"
+}
+
+# 删除快捷指令
+uninstall_shortcut() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        删除快捷指令                        ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    local bin_dir="$HOME/.local/bin"
+    local shortcut_name="dk"
+
+    # 检查是否已安装
+    if [ ! -L "$bin_dir/$shortcut_name" ] && [ ! -f "$bin_dir/$shortcut_name" ]; then
+        echo -e "${YELLOW}⚠ 未找到快捷指令 '${shortcut_name}'${NC}"
+        return
+    fi
+
+    echo -e "${BLUE}当前快捷指令: ${CYAN}$bin_dir/$shortcut_name${NC}"
+    if [ -L "$bin_dir/$shortcut_name" ]; then
+        echo -e "${BLUE}指向: ${CYAN}$(readlink "$bin_dir/$shortcut_name")${NC}"
+    fi
+
+    echo -e "\n${RED}确认删除快捷指令? (y/n, 默认 n):${NC}"
+    read -r confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo -e "${YELLOW}已取消删除${NC}"
+        return
+    fi
+
+    # 删除软链接
+    rm -f "$bin_dir/$shortcut_name"
+    echo -e "\n${GREEN}✓ 已删除快捷指令: ${CYAN}$shortcut_name${NC}"
+
+    echo -e "\n${YELLOW}💡 提示: PATH 配置保留在 shell 配置文件中，不影响其他程序${NC}"
+    echo -e "${YELLOW}   如需完全清理，请手动从以下文件中删除相关配置:${NC}"
+    echo -e "   ${CYAN}~/.zshrc 或 ~/.bashrc 或 ~/.bash_profile${NC}"
 }
 
 # 通用函数：提示按任意键继续
@@ -120,11 +207,14 @@ press_any_key_to_continue() {
 
 # 1. 构建镜像
 build_image() {
-    echo -e "\n${CYAN}--- 1. 构建镜像 ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🏗️  构建镜像                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
     echo -e "${BLUE}请输入镜像标签 (例如: my-app:1.0):${NC}"
     read -r image_tag
     if [ -z "$image_tag" ]; then
-        echo -e "${RED}错误：镜像标签不能为空。${NC}"
+        echo -e "${RED}❌ 错误：镜像标签不能为空。${NC}"
         return
     fi
 
@@ -132,20 +222,24 @@ build_image() {
     read -r dockerfile_path
     dockerfile_path=${dockerfile_path:-.}
 
-    echo -e "\n${YELLOW}正在执行: docker build -t \"$image_tag\" \"$dockerfile_path\"${NC}\n"
+    echo -e "\n${YELLOW}🚀 正在执行: docker build -t \"$image_tag\" \"$dockerfile_path\"${NC}\n"
     docker build -t "$image_tag" "$dockerfile_path"
 }
 
 # 2. 运行容器
 run_container() {
-    echo -e "\n${CYAN}--- 2. 运行容器 ---${NC}"
-    echo -e "${YELLOW}--- 本地镜像列表 ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🚀 运行容器                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 本地镜像列表:${NC}"
     docker images
-    echo -e "--------------------"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
     echo -e "${BLUE}请输入要运行的镜像名称 (例如: my-app:1.0):${NC}"
     read -r image_name
     if [ -z "$image_name" ]; then
-        echo -e "${RED}错误：镜像名称不能为空。${NC}"
+        echo -e "${RED}❌ 错误：镜像名称不能为空。${NC}"
         return
     fi
 
@@ -156,123 +250,169 @@ run_container() {
     echo -e "${BLUE}请输入要映射的端口 (例如: 8080:80) (可选):${NC}"
     read -r port_mapping
     [ -n "$port_mapping" ] && port_arg="-p $port_mapping" || port_arg=""
-    
+
     echo -e "${BLUE}是否后台运行 (-d)? (y/n, 默认 y):${NC}"
     read -r detach_mode
     [[ "$detach_mode" == "n" || "$detach_mode" == "N" ]] && detach_arg="" || detach_arg="-d"
 
-    echo -e "\n${YELLOW}正在执行: docker run $detach_arg $port_arg $name_arg $image_name${NC}\n"
+    echo -e "\n${YELLOW}🚀 正在执行: docker run $detach_arg $port_arg $name_arg $image_name${NC}\n"
     docker run $detach_arg $port_arg $name_arg "$image_name"
 }
 
 # 3. 停止容器
 stop_container() {
-    echo -e "\n${CYAN}--- 3. 停止容器 ---${NC}"
-    echo -e "${YELLOW}--- 正在运行的容器 ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🛑 停止容器                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 正在运行的容器:${NC}"
     docker ps
-    echo -e "--------------------"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
     echo -e "${BLUE}请输入要停止的容器名称或 ID:${NC}"
     read -r container_id
     if [ -z "$container_id" ]; then
-        echo -e "${RED}错误：容器名称或 ID 不能为空。${NC}"
+        echo -e "${RED}❌ 错误：容器名称或 ID 不能为空。${NC}"
         return
     fi
-    echo -e "\n${YELLOW}正在执行: docker stop \"$container_id\"${NC}\n"
+    echo -e "\n${YELLOW}🛑 正在执行: docker stop \"$container_id\"${NC}\n"
     docker stop "$container_id"
 }
 
 # 4. 启动已停止的容器
 start_container() {
-    echo -e "\n${CYAN}--- 4. 启动容器 ---${NC}"
-    echo -e "${YELLOW}--- 所有已停止的容器 ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        ▶️  启动容器                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 所有已停止的容器:${NC}"
     docker ps -f "status=exited"
-    echo -e "--------------------"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
     echo -e "${BLUE}请输入要启动的容器名称或 ID:${NC}"
     read -r container_id
     if [ -z "$container_id" ]; then
-        echo -e "${RED}错误：容器名称或 ID 不能为空。${NC}"
+        echo -e "${RED}❌ 错误：容器名称或 ID 不能为空。${NC}"
         return
     fi
-    echo -e "\n${YELLOW}正在执行: docker start \"$container_id\"${NC}\n"
+    echo -e "\n${YELLOW}▶️  正在执行: docker start \"$container_id\"${NC}\n"
     docker start "$container_id"
+}
+
+# 5. 重启容器
+restart_container() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🔄 重启容器                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 正在运行的容器:${NC}"
+    docker ps
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
+    echo -e "${BLUE}请输入要重启的容器名称或 ID:${NC}"
+    read -r container_id
+    if [ -z "$container_id" ]; then
+        echo -e "${RED}❌ 错误：容器名称或 ID 不能为空。${NC}"
+        return
+    fi
+    echo -e "\n${YELLOW}🔄 正在执行: docker restart \"$container_id\"${NC}\n"
+    docker restart "$container_id"
 }
 
 # 8. 删除容器
 remove_container() {
-    echo -e "\n${CYAN}--- 8. 删除容器 ---${NC}"
-    echo -e "${YELLOW}--- 所有容器 (包括已停止的) ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🗑️  删除容器                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 所有容器 (包括已停止的):${NC}"
     docker ps -a
-    echo -e "--------------------"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
     echo -e "${BLUE}请输入要删除的容器名称或 ID:${NC}"
     read -r container_id
     if [ -z "$container_id" ]; then
-        echo -e "${RED}错误：容器名称或 ID 不能为空。${NC}"
+        echo -e "${RED}❌ 错误：容器名称或 ID 不能为空。${NC}"
         return
     fi
-    echo -e "\n${YELLOW}正在执行: docker rm \"$container_id\"${NC}\n"
+    echo -e "\n${YELLOW}🗑️  正在执行: docker rm \"$container_id\"${NC}\n"
     docker rm "$container_id"
 }
 
 # 9. 删除镜像
 remove_image() {
-    echo -e "\n${CYAN}--- 9. 删除镜像 ---${NC}"
-    echo -e "${YELLOW}--- 本地镜像列表 ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🗑️  删除镜像                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 本地镜像列表:${NC}"
     docker images
-    echo -e "--------------------"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
     echo -e "${BLUE}请输入要删除的镜像名称或 ID:${NC}"
     read -r image_id
     if [ -z "$image_id" ]; then
-        echo -e "${RED}错误：镜像名称或 ID 不能为空。${NC}"
+        echo -e "${RED}❌ 错误：镜像名称或 ID 不能为空。${NC}"
         return
     fi
-    echo -e "\n${YELLOW}正在执行: docker rmi \"$image_id\"${NC}\n"
+    echo -e "\n${YELLOW}🗑️  正在执行: docker rmi \"$image_id\"${NC}\n"
     docker rmi "$image_id"
 }
 
 # 10. 查看容器日志
 view_logs() {
-    echo -e "\n${CYAN}--- 10. 查看容器日志 ---${NC}"
-    echo -e "${YELLOW}--- 正在运行的容器 ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        📜 查看容器日志                     ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 正在运行的容器:${NC}"
     docker ps
-    echo -e "--------------------"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
     echo -e "${BLUE}请输入要查看日志的容器名称或 ID:${NC}"
     read -r container_id
     if [ -z "$container_id" ]; then
-        echo -e "${RED}错误：容器名称或 ID 不能为空。${NC}"
+        echo -e "${RED}❌ 错误：容器名称或 ID 不能为空。${NC}"
         return
     fi
-    echo -e "\n${YELLOW}正在执行: docker logs -f \"$container_id\"${NC}"
-    echo -e "${YELLOW}(按 Ctrl+C 停止查看日志)${NC}\n"
+    echo -e "\n${YELLOW}📜 正在执行: docker logs -f \"$container_id\"${NC}"
+    echo -e "${YELLOW}💡 提示: 按 Ctrl+C 停止查看日志${NC}\n"
     docker logs -f "$container_id"
 }
 
 # 11. 进入容器
 exec_container() {
-    echo -e "\n${CYAN}--- 11. 进入容器 ---${NC}"
-    echo -e "${YELLOW}--- 正在运行的容器 ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        💻 进入容器                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📋 正在运行的容器:${NC}"
     docker ps
-    echo -e "--------------------"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
     echo -e "${BLUE}请输入要进入的容器名称或 ID:${NC}"
     read -r container_id
     if [ -z "$container_id" ]; then
-        echo -e "${RED}错误：容器名称或 ID 不能为空。${NC}"
+        echo -e "${RED}❌ 错误：容器名称或 ID 不能为空。${NC}"
         return
     fi
-    
+
     echo -e "${BLUE}请输入要执行的命令 (默认为 /bin/bash):${NC}"
     read -r command
     command=${command:-/bin/bash}
 
-    echo -e "\n${YELLOW}正在执行: docker exec -it \"$container_id\" $command${NC}\n"
+    echo -e "\n${YELLOW}💻 正在执行: docker exec -it \"$container_id\" $command${NC}\n"
     docker exec -it "$container_id" $command
 }
 
 # 12. 执行 Docker Compose
 run_docker_compose() {
-    echo -e "\n${CYAN}--- 12. 执行 Docker Compose ---${NC}"
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🔧 执行 Docker Compose              ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
 
     if [ -z "$COMPOSE_CMD" ]; then
-        echo -e "${RED}错误: Docker Compose 未安装或不可用。${NC}"
+        echo -e "${RED}❌ 错误: Docker Compose 未安装或不可用。${NC}"
         return
     fi
 
@@ -281,43 +421,278 @@ run_docker_compose() {
     compose_path=${compose_path:-.}
 
     if [ -d "$compose_path" ]; then
-        echo -e "\n${YELLOW}正在目录 \"$compose_path\" 中执行: $COMPOSE_CMD up -d${NC}\n"
+        echo -e "\n${YELLOW}🔧 正在目录 \"$compose_path\" 中执行: $COMPOSE_CMD up -d${NC}\n"
         (cd "$compose_path" && $COMPOSE_CMD up -d)
     else
-        echo -e "${RED}错误: 目录 \"$compose_path\" 不存在。${NC}"
+        echo -e "${RED}❌ 错误: 目录 \"$compose_path\" 不存在。${NC}"
     fi
+}
+
+# 15. 资源监控
+monitor_resources() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        📊 容器资源监控                     ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}💡 提示: 实时监控容器 CPU、内存、网络等资源使用情况${NC}"
+    echo -e "${YELLOW}💡 按 Ctrl+C 退出监控${NC}\n"
+
+    sleep 2
+    docker stats
+}
+
+# 16. 镜像拉取
+pull_image() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        📥 拉取镜像                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${BLUE}请输入要拉取的镜像名称 (例如: nginx:latest):${NC}"
+    read -r image_name
+    if [ -z "$image_name" ]; then
+        echo -e "${RED}❌ 错误：镜像名称不能为空。${NC}"
+        return
+    fi
+
+    echo -e "\n${YELLOW}📥 正在执行: docker pull \"$image_name\"${NC}\n"
+    docker pull "$image_name"
+
+    if [ $? -eq 0 ]; then
+        echo -e "\n${GREEN}✓ 镜像拉取成功！${NC}"
+    else
+        echo -e "\n${RED}❌ 镜像拉取失败${NC}"
+    fi
+}
+
+# 17. 磁盘使用分析
+disk_usage_analysis() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        💾 磁盘使用分析                     ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📊 Docker 磁盘使用情况:${NC}\n"
+    docker system df -v
+
+    echo -e "\n${CYAN}────────────────────────────────────────────${NC}"
+    echo -e "${YELLOW}💡 提示: 如需清理未使用的资源，请使用系统清理功能${NC}"
+}
+
+# 18. 系统清理
+system_cleanup() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🧹 系统清理                         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}📊 当前磁盘使用情况:${NC}\n"
+    docker system df
+
+    echo -e "\n${CYAN}────────────────────────────────────────────${NC}"
+    echo -e "${YELLOW}⚠️  即将清理以下内容:${NC}"
+    echo -e "  ${BLUE}•${NC} 已停止的容器"
+    echo -e "  ${BLUE}•${NC} 未使用的网络"
+    echo -e "  ${BLUE}•${NC} 悬空镜像 (dangling images)"
+    echo -e "  ${BLUE}•${NC} 未使用的构建缓存"
+    echo -e "${CYAN}────────────────────────────────────────────${NC}"
+
+    echo -e "\n${BLUE}选择清理级别:${NC}"
+    echo -e "  ${YELLOW}1.${NC} 标准清理 (保留未使用的镜像)"
+    echo -e "  ${YELLOW}2.${NC} 深度清理 (删除所有未使用的镜像)"
+    echo -e "  ${YELLOW}3.${NC} 完全清理 (包括数据卷，危险！)"
+    echo -e "  ${YELLOW}0.${NC} 取消"
+
+    echo -n -e "\n${BLUE}请选择 [0-3]: ${NC}"
+    read -r cleanup_level
+
+    case $cleanup_level in
+        1)
+            echo -e "\n${YELLOW}🧹 执行标准清理...${NC}\n"
+            docker system prune -f
+            ;;
+        2)
+            echo -e "\n${RED}确认深度清理? 将删除所有未使用的镜像 (y/n):${NC}"
+            read -r confirm
+            if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+                echo -e "\n${YELLOW}🧹 执行深度清理...${NC}\n"
+                docker system prune -af
+            else
+                echo -e "${YELLOW}已取消${NC}"
+                return
+            fi
+            ;;
+        3)
+            echo -e "\n${RED}⚠️  警告: 完全清理将删除所有未使用的数据卷！${NC}"
+            echo -e "${RED}确认执行? (输入 YES 确认):${NC}"
+            read -r confirm
+            if [ "$confirm" == "YES" ]; then
+                echo -e "\n${YELLOW}🧹 执行完全清理...${NC}\n"
+                docker system prune -af --volumes
+            else
+                echo -e "${YELLOW}已取消${NC}"
+                return
+            fi
+            ;;
+        0)
+            echo -e "${YELLOW}已取消清理${NC}"
+            return
+            ;;
+        *)
+            echo -e "${RED}❌ 无效选择${NC}"
+            return
+            ;;
+    esac
+
+    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✓ 清理完成！${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "\n${YELLOW}📊 清理后磁盘使用:${NC}\n"
+    docker system df
+}
+
+# 19. 服务彻底清除
+complete_removal() {
+    echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║        🗑️  服务彻底清除                    ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${RED}⚠️  此功能将彻底删除指定服务的所有相关资源！${NC}\n"
+
+    echo -e "${BLUE}请输入要清除的服务关键词 (如: nginx, mysql):${NC}"
+    read -r service_keyword
+
+    if [ -z "$service_keyword" ]; then
+        echo -e "${RED}❌ 错误：服务关键词不能为空。${NC}"
+        return
+    fi
+
+    echo -e "\n${YELLOW}🔍 搜索相关资源...${NC}\n"
+
+    # 查找相关容器
+    echo -e "${CYAN}📦 相关容器:${NC}"
+    matching_containers=$(docker ps -a --filter "name=$service_keyword" --format "{{.ID}}\t{{.Names}}\t{{.Status}}")
+    if [ -n "$matching_containers" ]; then
+        echo "$matching_containers" | nl
+    else
+        echo -e "${YELLOW}  未找到${NC}"
+    fi
+
+    # 查找相关镜像
+    echo -e "\n${CYAN}🖼️  相关镜像:${NC}"
+    matching_images=$(docker images --filter "reference=*$service_keyword*" --format "{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}")
+    if [ -n "$matching_images" ]; then
+        echo "$matching_images" | nl
+    else
+        echo -e "${YELLOW}  未找到${NC}"
+    fi
+
+    # 查找相关网络
+    echo -e "\n${CYAN}🌐 相关网络:${NC}"
+    matching_networks=$(docker network ls --filter "name=$service_keyword" --format "{{.ID}}\t{{.Name}}")
+    if [ -n "$matching_networks" ]; then
+        echo "$matching_networks" | nl
+    else
+        echo -e "${YELLOW}  未找到${NC}"
+    fi
+
+    # 查找相关数据卷
+    echo -e "\n${CYAN}💾 相关数据卷:${NC}"
+    matching_volumes=$(docker volume ls --filter "name=$service_keyword" --format "{{.Name}}")
+    if [ -n "$matching_volumes" ]; then
+        echo "$matching_volumes" | nl
+    else
+        echo -e "${YELLOW}  未找到${NC}"
+    fi
+
+    echo -e "\n${CYAN}────────────────────────────────────────────${NC}"
+
+    # 如果没有找到任何资源
+    if [ -z "$matching_containers" ] && [ -z "$matching_images" ] && [ -z "$matching_networks" ] && [ -z "$matching_volumes" ]; then
+        echo -e "${YELLOW}未找到与 '$service_keyword' 相关的任何资源${NC}"
+        return
+    fi
+
+    echo -e "\n${RED}⚠️  确认彻底删除以上所有资源? (输入 'DELETE' 确认):${NC}"
+    read -r confirm
+
+    if [ "$confirm" != "DELETE" ]; then
+        echo -e "${YELLOW}已取消删除${NC}"
+        return
+    fi
+
+    echo -e "\n${YELLOW}🗑️  开始清除...${NC}\n"
+
+    # 删除容器
+    if [ -n "$matching_containers" ]; then
+        echo -e "${BLUE}[1/4]${NC} 停止并删除容器..."
+        echo "$matching_containers" | awk '{print $1}' | while read container_id; do
+            docker stop "$container_id" 2>/dev/null
+            docker rm -f "$container_id" 2>/dev/null && echo -e "  ${GREEN}✓${NC} 已删除容器: $container_id"
+        done
+    fi
+
+    # 删除镜像
+    if [ -n "$matching_images" ]; then
+        echo -e "\n${BLUE}[2/4]${NC} 删除镜像..."
+        echo "$matching_images" | awk '{print $2}' | while read image_id; do
+            docker rmi -f "$image_id" 2>/dev/null && echo -e "  ${GREEN}✓${NC} 已删除镜像: $image_id"
+        done
+    fi
+
+    # 删除网络
+    if [ -n "$matching_networks" ]; then
+        echo -e "\n${BLUE}[3/4]${NC} 删除网络..."
+        echo "$matching_networks" | awk '{print $1}' | while read network_id; do
+            docker network rm "$network_id" 2>/dev/null && echo -e "  ${GREEN}✓${NC} 已删除网络: $network_id"
+        done
+    fi
+
+    # 删除数据卷
+    if [ -n "$matching_volumes" ]; then
+        echo -e "\n${BLUE}[4/4]${NC} 删除数据卷..."
+        echo "$matching_volumes" | while read volume_name; do
+            docker volume rm "$volume_name" 2>/dev/null && echo -e "  ${GREEN}✓${NC} 已删除数据卷: $volume_name"
+        done
+    fi
+
+    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✓ 服务 '$service_keyword' 已彻底清除！${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
 # 显示主菜单
 show_menu() {
     clear
-    echo -e "${GREEN}==============================================${NC}"
-    echo -e "${GREEN}        Docker 交互式操作菜单 v3 ($OS)        ${NC}"
-    echo -e "${GREEN}==============================================${NC}"
-    echo -e " ${CYAN}容器操作:${NC}"
-    echo -e "  ${YELLOW}1.${NC} 构建镜像 (Build)"
-    echo -e "  ${YELLOW}2.${NC} 运行容器 (Run)"
-    echo -e "  ${YELLOW}3.${NC} 停止容器 (Stop)"
-    echo -e "  ${YELLOW}4.${NC} 启动容器 (Start)"
-    echo -e "  ${YELLOW}10.${NC} 查看日志 (Logs)"
-    echo -e "  ${YELLOW}11.${NC} 进入容器 (Exec)"
-    echo
-    echo -e " ${CYAN}列表与清理:${NC}"
-    echo -e "  ${YELLOW}5.${NC} 查看运行中的容器 (ls)"
-    echo -e "  ${YELLOW}6.${NC} 查看所有容器 (ls -a)"
-    echo -e "  ${YELLOW}7.${NC} 查看本地镜像 (images)"
-    echo -e "  ${YELLOW}8.${NC} 删除容器 (rm)"
-    echo -e "  ${YELLOW}9.${NC} 删除镜像 (rmi)"
-    echo
-    echo -e " ${CYAN}Compose:${NC}"
-    echo -e "  ${YELLOW}12.${NC} 执行 Docker Compose (up -d)"
-    echo
-    echo -e " ${CYAN}工具:${NC}"
-    echo -e "  ${YELLOW}13.${NC} 安装快捷指令 (输入 'dk' 即可运行本脚本)"
-    echo
-    echo -e " ${RED}0. 退出脚本 (Exit)${NC}"
-    echo -e "${GREEN}==============================================${NC}"
-    echo -e "${BLUE}请输入您的选择 [0-13]:${NC}"
+    echo -e "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                                                  ║${NC}"
+    echo -e "${GREEN}║       🐳 Docker 交互式操作菜单 v4 ($OS)       ║${NC}"
+    echo -e "${GREEN}║                                                  ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${CYAN}┌─ 📦 容器操作 ────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}1.${NC}  构建镜像                  ${YELLOW}5.${NC}  重启容器              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}2.${NC}  运行容器                  ${YELLOW}10.${NC} 查看日志              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}3.${NC}  停止容器                  ${YELLOW}11.${NC} 进入容器              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}4.${NC}  启动容器                  ${YELLOW}15.${NC} 资源监控              ${CYAN}│${NC}"
+    echo -e "${CYAN}└──────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -e "${CYAN}┌─ 📋 镜像 & 列表 ─────────────────────────────────┐${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}6.${NC}  查看运行中的容器          ${YELLOW}16.${NC} 拉取镜像              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}7.${NC}  查看所有容器              ${YELLOW}8.${NC}  删除容器              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}9.${NC}  查看本地镜像              ${YELLOW}20.${NC} 删除镜像              ${CYAN}│${NC}"
+    echo -e "${CYAN}└──────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -e "${CYAN}┌─ 🧹 系统维护 ────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}17.${NC} 磁盘使用分析              ${YELLOW}19.${NC} 服务彻底清除          ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}18.${NC} 系统清理 (释放空间)                                ${CYAN}│${NC}"
+    echo -e "${CYAN}└──────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -e "${CYAN}┌─ 🔧 Compose & 工具 ──────────────────────────────┐${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}12.${NC} 执行 Docker Compose       ${YELLOW}14.${NC} 删除快捷指令          ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${YELLOW}13.${NC} 安装快捷指令 (输入 'dk' 运行本脚本)              ${CYAN}│${NC}"
+    echo -e "${CYAN}└──────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -e "${RED}  0.${NC}  退出脚本"
+    echo ""
+    echo -n -e "${BLUE}请输入您的选择 [0-20]: ${NC}"
 }
 
 # 主循环
@@ -329,16 +704,36 @@ while true; do
         2) run_container; press_any_key_to_continue ;;
         3) stop_container; press_any_key_to_continue ;;
         4) start_container; press_any_key_to_continue ;;
-        5) echo -e "\n${CYAN}--- 5. 正在运行的容器 ---${NC}"; docker ps; press_any_key_to_continue ;;
-        6) echo -e "\n${CYAN}--- 6. 所有容器 (包括已停止的) ---${NC}"; docker ps -a; press_any_key_to_continue ;;
-        7) echo -e "\n${CYAN}--- 7. 本地镜像列表 ---${NC}"; docker images; press_any_key_to_continue ;;
+        5) restart_container; press_any_key_to_continue ;;
+        6) echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}";
+           echo -e "${CYAN}║     📋 正在运行的容器                      ║${NC}";
+           echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}";
+           docker ps; press_any_key_to_continue ;;
+        7) echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}";
+           echo -e "${CYAN}║     📋 所有容器 (包括已停止)              ║${NC}";
+           echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}";
+           docker ps -a; press_any_key_to_continue ;;
         8) remove_container; press_any_key_to_continue ;;
-        9) remove_image; press_any_key_to_continue ;;
+        9) echo -e "\n${CYAN}╔════════════════════════════════════════════╗${NC}";
+           echo -e "${CYAN}║     📋 本地镜像列表                        ║${NC}";
+           echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}";
+           docker images; press_any_key_to_continue ;;
         10) view_logs; press_any_key_to_continue ;;
         11) exec_container; press_any_key_to_continue ;;
         12) run_docker_compose; press_any_key_to_continue ;;
         13) install_shortcut; press_any_key_to_continue ;;
-        0) echo -e "\n${GREEN}感谢使用，正在退出...${NC}"; exit 0 ;;
-        *) echo -e "\n${RED}无效输入，请输入 0 到 13 之间的数字。${NC}"; press_any_key_to_continue ;;
+        14) uninstall_shortcut; press_any_key_to_continue ;;
+        15) monitor_resources; press_any_key_to_continue ;;
+        16) pull_image; press_any_key_to_continue ;;
+        17) disk_usage_analysis; press_any_key_to_continue ;;
+        18) system_cleanup; press_any_key_to_continue ;;
+        19) complete_removal; press_any_key_to_continue ;;
+        20) remove_image; press_any_key_to_continue ;;
+        0) echo -e "\n${GREEN}👋 感谢使用，再见！${NC}\n";
+           break ;;
+        *) echo -e "\n${RED}❌ 无效输入，请输入 0 到 20 之间的数字。${NC}"; press_any_key_to_continue ;;
     esac
 done
+
+# 脚本正常退出，保持终端打开
+exit 0
